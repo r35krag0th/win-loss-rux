@@ -1,5 +1,7 @@
 module github.com/r35krag0th/win-loss-rux
 
+// +heroku goVersion 1.15
+
 go 1.15
 
 require (
