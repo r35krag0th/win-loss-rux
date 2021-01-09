@@ -113,6 +113,7 @@ func (w *WinLossCounter) Reset() {
 	w.Wins = 0
 	w.Losses = 0
 	w.Draws = 0
+	w.Save()
 }
 
 func (w *WinLossCounter) Destroy() {
