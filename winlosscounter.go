@@ -17,6 +17,10 @@ type WinLossCounter struct {
 	Wins int `json:"wins"`
 	Losses int `json:"losses"`
 	Draws int `json:"draws"`
+	Urls struct {
+		Html string `json:"html"`
+		Api string `json:"api"`
+	}
 }
 
 func NewWinLossCounter(name string) *WinLossCounter {

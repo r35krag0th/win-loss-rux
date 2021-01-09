@@ -1,0 +1,41 @@
+<html>
+    <head>
+        <title>{{ .Title }}</title>
+        <link rel="preconnect" href="https://fonts.gstatic.com">
+        <link href="https://fonts.googleapis.com/css2?family=Major+Mono+Display&display=swap" rel="stylesheet">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.min.js" type="text/javascript"></script>
+        <script type="text/javascript">
+            setInterval(function() {
+                $.ajax({
+                    url: "/api/v1/counters/{{ .Name }}",
+                    success: function(data) {
+                        $("span.wins").text(data.wins);
+                        $("span.losses").text(data.losses);
+                        $("span.draws").text(data.draws);
+                    },
+                    dataType: "json"
+                });
+
+            }, 1000);
+        </script>
+        <style>
+            body {
+                font-family: 'Major Mono Display', monospace;
+                background: black;
+            }
+            div.counter {
+                font-size: 10em;
+                color: goldenrod;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="counter">
+            <span class="wins">{{ .Wins }}</span>
+            &ndash;
+            <span class="losses">{{ .Losses }}</span>
+            &ndash;
+            <span class="draws">{{ .Draws }}</span>
+        </div>
+    </body>
+</html>
