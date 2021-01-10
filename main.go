@@ -6,6 +6,7 @@ import (
 	"github.com/gookit/rux"
 	"github.com/hashicorp/consul/api"
 	"html/template"
+	"os"
 )
 
 //var consulClient *api.Client
@@ -13,7 +14,19 @@ import (
 func handleCounter(name string) *WinLossCounter {
 	tmp := NewWinLossCounter(name)
 
-	consulClient, err := api.NewClient(api.DefaultConfig())
+	consulScheme := os.Getenv("CONSUL_SCHEME")
+	consulAddress := os.Getenv("CONSUL_ADDR")
+
+	targetConfig := api.DefaultConfig()
+
+	if consulAddress != "" && consulScheme != "" {
+		targetConfig = &api.Config{
+			Address: consulAddress,
+			Scheme:  consulScheme,
+		}
+	}
+
+	consulClient, err := api.NewClient(targetConfig)
 	if err != nil {
 		fmt.Println("Failed to create Consul client", err)
 	}
