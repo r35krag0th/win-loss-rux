@@ -1,72 +1,68 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/go-redis/redis/v8"
-	"os"
+	"github.com/hashicorp/consul/api"
 	"strings"
 )
 
-var ctx = context.Background()
+const consulKeyPrefix = "win-loss-api/counters"
 
 type WinLossCounter struct {
-	rdb *redis.Client
-	Name string `json:"name"`
-	Wins int `json:"wins"`
-	Losses int `json:"losses"`
-	Draws int `json:"draws"`
-	Urls struct {
+	consulClient *api.Client
+	Name         string `json:"name"`
+	Wins         int    `json:"wins"`
+	Losses       int    `json:"losses"`
+	Draws        int    `json:"draws"`
+	Urls         struct {
 		Html string `json:"html"`
-		Api string `json:"api"`
+		Api  string `json:"api"`
 	}
 }
 
 func NewWinLossCounter(name string) *WinLossCounter {
 	tmp := &WinLossCounter{
-		Name: name,
-		Wins: 0,
+		Name:   name,
+		Wins:   0,
 		Losses: 0,
-		Draws: 0,
+		Draws:  0,
 	}
-
-	tmp.Connect()
 	return tmp
 }
 
-func (w WinLossCounter) redisKey() string {
-	return fmt.Sprintf("WinLossCounter-%s", w.Name)
+func (w WinLossCounter) consulKey() string {
+	return fmt.Sprintf(strings.Join([]string{consulKeyPrefix, "%s"}, "/"), w.Name)
 }
 
 func (w WinLossCounter) ListAll() []string {
-	cmdResponse := w.rdb.Keys(ctx, w.redisKey())
-	foundKeys, err := cmdResponse.Result()
+	// Consul
+	kv := w.consulClient.KV()
+	matchedKeys, _, err := kv.List(consulKeyPrefix, nil)
 	if err != nil {
-		fmt.Println("[ListAll] Error: ", err)
-		return []string{}
+		fmt.Printf("[ListAll] Failed for Key (%s) -- %v", w.Name, err)
 	}
 
 	var returnedKeys []string
-	for _, k := range foundKeys {
-		returnedKeys = append(returnedKeys, strings.SplitN(k, "-", 2)[1])
+	for _, k := range matchedKeys {
+		fmt.Printf("[ListAll] k=%s\n", k)
+		splitBySlash := strings.SplitN(k.Key, "/", 3)
+
+		if len(splitBySlash) < 3 || splitBySlash[2] == "" {
+			fmt.Printf("--- Too few segments or last segment was empy.  SKIP.")
+			continue
+		}
+
+		returnedKeys = append(
+			returnedKeys,
+			strings.SplitN(k.Key, "/", 3)[2],
+		)
 	}
 	return returnedKeys
 }
 
-func (w *WinLossCounter) Connect() {
-	addr := os.Getenv("REDIS_ADDR")
-	if addr == "" {
-		addr = "localhost:6379"
-	}
-	password := os.Getenv("REDIS_PASSWORD")
-
-	client := redis.NewClient(&redis.Options{
-		Addr: addr,
-		Password: password,
-		DB: 0,
-	})
-	w.rdb = client
+func (w *WinLossCounter) SetConsulClient(c *api.Client) {
+	w.consulClient = c
 }
 
 func (w *WinLossCounter) ValidateAndFix() {
@@ -121,11 +117,14 @@ func (w *WinLossCounter) Reset() {
 }
 
 func (w *WinLossCounter) Destroy() {
-	cmdResponse := w.rdb.Del(ctx, w.redisKey())
-	_, err := cmdResponse.Result()
+	kv := w.consulClient.KV()
+	_, err := kv.Delete(w.consulKey(), nil)
 	if err != nil {
-		fmt.Printf("[Destroy](%s) failed: %v+", w.Name, err)
+		fmt.Printf("[Destroy](%s) failed: %v+\n", w.Name, err)
+		return
 	}
+
+	fmt.Printf("[Destroy](%s) OK\n", w.Name)
 }
 
 func (w *WinLossCounter) FromJson(v string) error {
@@ -154,20 +153,29 @@ func (w WinLossCounter) ToJson() (error, string) {
 }
 
 func (w *WinLossCounter) Load() {
-	rawValue, redisErr := w.rdb.Get(ctx, w.redisKey()).Result()
-	if redisErr == redis.Nil {
-		fmt.Printf("[Load] Key (%s) does not exist\n", w.Name)
+	fmt.Printf("[Load] consulClient is -> %+v\n", w.consulClient)
+
+	// === Consul
+	fmt.Println("[Load] Pre Getting KV Client")
+	kv := w.consulClient.KV()
+
+	fmt.Printf("[Load] Pre kv.Get(%s, nil)\n", w.consulKey())
+	p, _, err := kv.Get(w.consulKey(), nil)
+
+	fmt.Println("[Load] Pre err != nil check")
+	if err != nil {
+		fmt.Printf("[Load] Key (%s) does not exist -- %s\n", w.Name, err)
+		return
+	}
+	if p == nil {
+		fmt.Printf("[Load] Key (%s) variable 'p' from Consul was nil...\n", w.Name)
 		return
 	}
 
-	if redisErr != nil {
-		fmt.Println("[Load] Error getting state: ", w.Name, redisErr)
-		return
-	}
-
-	err := w.FromJson(rawValue)
+	err = w.FromJson(string(p.Value))
 	if err != nil {
 		fmt.Println("[Load] Error: ", w.Name, err)
+		return
 	}
 }
 
@@ -179,8 +187,12 @@ func (w *WinLossCounter) Save() {
 		fmt.Println("[Save] Error getting JSON: ", w.Name, err)
 		return
 	}
-	redisErr := w.rdb.Set(ctx, w.redisKey(), stateJson, 0).Err()
-	if redisErr != nil {
-		fmt.Println("[Save] Error saving state: ", w.Name, err)
+
+	// Consul
+	kv := w.consulClient.KV()
+	wp := &api.KVPair{Key: w.consulKey(), Value: []byte(stateJson)}
+	_, err = kv.Put(wp, nil)
+	if err != nil {
+		fmt.Println("[Save->Consul] Failed to write Wins", err)
 	}
 }

@@ -4,29 +4,38 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/gookit/rux"
+	"github.com/hashicorp/consul/api"
 	"html/template"
 )
 
+//var consulClient *api.Client
+
 func handleCounter(name string) *WinLossCounter {
 	tmp := NewWinLossCounter(name)
+
+	consulClient, err := api.NewClient(api.DefaultConfig())
+	if err != nil {
+		fmt.Println("Failed to create Consul client", err)
+	}
+	tmp.SetConsulClient(consulClient)
 	tmp.Load()
 	return tmp
 }
 
 type CounterPage struct {
-	Name string
-	Title string
-	Wins int
+	Name   string
+	Title  string
+	Wins   int
 	Losses int
-	Draws int
+	Draws  int
 }
 
 func NewCounterPageFromWinLossCounter(counter *WinLossCounter) *CounterPage {
 	return &CounterPage{
-		Title: "",
-		Wins: counter.Wins,
+		Title:  "",
+		Wins:   counter.Wins,
 		Losses: counter.Losses,
-		Draws: counter.Draws,
+		Draws:  counter.Draws,
 	}
 }
 
@@ -36,7 +45,7 @@ type ClickableLinkData struct {
 }
 
 type IndexTemplateData struct {
-	Title string
+	Title    string
 	Counters []ClickableLinkData
 }
 
@@ -50,8 +59,9 @@ func (i *IndexTemplateData) AddCounter(href, text string) {
 func main() {
 	r := rux.New()
 
-	r.GET("", func (c *rux.Context) {
-		counter := handleCounter("*")
+	r.GET("", func(c *rux.Context) {
+		counter := handleCounter("")
+		//counter.SetConsulClient(consulClient)
 		counterNames := counter.ListAll()
 
 		tmpl := template.Must(template.ParseFiles("templates/index.gohtml"))
@@ -73,8 +83,10 @@ func main() {
 		c.HTML(200, out.Bytes())
 	})
 
-	r.GET("/counters/{name}", func (c *rux.Context) {
+	r.GET("/counters/{name}", func(c *rux.Context) {
 		counter := handleCounter(c.Param("name"))
+		//counter.SetConsulClient(consulClient)
+
 		tmpl := template.Must(template.ParseFiles("templates/counter.gohtml"))
 		data := NewCounterPageFromWinLossCounter(counter)
 		data.Name = counter.Name
@@ -92,74 +104,94 @@ func main() {
 	r.Group("/api/v1", func() {
 
 		// The Counter routes
-		r.Group("/counters", func () {
+		r.Group("/counters", func() {
 
 			// List all Counters
-			r.GET("", func (c *rux.Context) {
-				counter := handleCounter("*")
+			r.GET("", func(c *rux.Context) {
+				counter := handleCounter("")
+				//counter.SetConsulClient(consulClient)
+
 				counterNames := counter.ListAll()
 				c.JSON(200, counterNames)
 			})
 
 			// The "specific" counter routes
-			r.Group("/{name}", func () {
+			r.Group("/{name}", func() {
 				// Get the counter's W/L/D stats and Name
-				r.GET("", func (c *rux.Context) {
+				r.GET("", func(c *rux.Context) {
 					counter := handleCounter(c.Param("name"))
+					//counter.SetConsulClient(consulClient)
+
 					c.JSON(200, counter)
 				})
 
 				// Allow deleting the counter
-				r.DELETE("", func (c *rux.Context) {
+				r.DELETE("", func(c *rux.Context) {
 					counter := handleCounter(c.Param("name"))
+					//counter.SetConsulClient(consulClient)
+
 					counter.Destroy()
 					c.JSON(200, counter)
 				})
 
 				// Allow resetting the counter to ZERO
-				r.POST("/reset", func (c *rux.Context) {
+				r.POST("/reset", func(c *rux.Context) {
 					counter := handleCounter(c.Param("name"))
+					//counter.SetConsulClient(consulClient)
+
 					counter.Reset()
 					c.JSON(200, counter)
 				})
 
 				// Increment and Decrement Wins
-				r.Group("/win", func (){
-					r.PUT("", func (c *rux.Context) {
+				r.Group("/win", func() {
+					r.PUT("", func(c *rux.Context) {
 						counter := handleCounter(c.Param("name"))
+						//counter.SetConsulClient(consulClient)
+
 						counter.AddWin()
 						c.JSON(200, counter)
 					})
-					r.DELETE("", func (c *rux.Context) {
+					r.DELETE("", func(c *rux.Context) {
 						counter := handleCounter(c.Param("name"))
+						//counter.SetConsulClient(consulClient)
+
 						counter.RemoveWin()
 						c.JSON(200, counter)
 					})
 				})
 
 				// Increment and Decrement Losses
-				r.Group("/loss", func (){
-					r.PUT("", func (c *rux.Context) {
+				r.Group("/loss", func() {
+					r.PUT("", func(c *rux.Context) {
 						counter := handleCounter(c.Param("name"))
+						//counter.SetConsulClient(consulClient)
+
 						counter.AddLoss()
 						c.JSON(200, counter)
 					})
-					r.DELETE("", func (c *rux.Context) {
+					r.DELETE("", func(c *rux.Context) {
 						counter := handleCounter(c.Param("name"))
+						//counter.SetConsulClient(consulClient)
+
 						counter.RemoveLoss()
 						c.JSON(200, counter)
 					})
 				})
 
 				// Increment and Decrement Draws
-				r.Group("/draw", func (){
-					r.PUT("", func (c *rux.Context) {
+				r.Group("/draw", func() {
+					r.PUT("", func(c *rux.Context) {
 						counter := handleCounter(c.Param("name"))
+						//counter.SetConsulClient(consulClient)
+
 						counter.AddDraw()
 						c.JSON(200, counter)
 					})
-					r.DELETE("", func (c *rux.Context) {
+					r.DELETE("", func(c *rux.Context) {
 						counter := handleCounter(c.Param("name"))
+						//counter.SetConsulClient(consulClient)
+
 						counter.RemoveDraw()
 						c.JSON(200, counter)
 					})
