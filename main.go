@@ -113,7 +113,7 @@ func main() {
 		c.HTML(200, out.Bytes())
 	})
 
-    r.GET("/counter/{name}/solo", func(c *rux.Context) {
+    r.GET("/counters/{name}/solo", func(c *rux.Context) {
         counter := handleCounter(c.Param("name"))
         tmpl := template.Must(template.ParseFiles("templates/solo_counter.gohtml"))
         data := NewCounterPageFromWinLossCounter(counter)
