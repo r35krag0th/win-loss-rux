@@ -12,6 +12,7 @@ const consulKeyPrefix = "win-loss-api/counters"
 type WinLossCounter struct {
 	consulClient *api.Client
 	Name         string `json:"name"`
+	PrettyName   string `json:"pretty_name,omitempty"`
 	Wins         int    `json:"wins"`
 	Losses       int    `json:"losses"`
 	Draws        int    `json:"draws"`
@@ -22,11 +23,15 @@ type WinLossCounter struct {
 }
 
 func NewWinLossCounter(name string) *WinLossCounter {
+	prettyName := strings.ReplaceAll(name, "-", " ")
+	fmt.Printf("Transforming '%s' into '%s'", name, prettyName)
 	tmp := &WinLossCounter{
-		Name:   name,
-		Wins:   0,
-		Losses: 0,
-		Draws:  0,
+		Name: name,
+		// PrettyName: strings.ReplaceAll(name, "-", " "),
+		PrettyName: prettyName,
+		Wins:       0,
+		Losses:     0,
+		Draws:      0,
 	}
 	return tmp
 }
@@ -45,7 +50,7 @@ func (w WinLossCounter) ListAll() []string {
 
 	var returnedKeys []string
 	for _, k := range matchedKeys {
-		fmt.Printf("[ListAll] k=%s\n", k)
+		// fmt.Printf("[ListAll] k=%s\n", k)
 		splitBySlash := strings.SplitN(k.Key, "/", 3)
 
 		if len(splitBySlash) < 3 || splitBySlash[2] == "" {

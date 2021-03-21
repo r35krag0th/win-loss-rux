@@ -25,12 +25,19 @@
             div.counter {
                 font-size: 10em;
                 color: goldenrod;
+                text-align: center;
+            }
+            div.counter_name {
+                font-size: xxx-large; color: cyan;
+            }
+            div.counter div {
+                display: inline;
             }
         </style>
     </head>
     <body>
         <div class="counter">
-            <span class="wins">{{ .Wins }}</span>
+            <div class="counter_digit wins">{{ .Wins }}</div><div class="counter_name">{{ .PrettyName }}</div>
         </div>
     </body>
 </html>

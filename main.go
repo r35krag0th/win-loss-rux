@@ -36,19 +36,22 @@ func handleCounter(name string) *WinLossCounter {
 }
 
 type CounterPage struct {
-	Name   string
-	Title  string
-	Wins   int
-	Losses int
-	Draws  int
+	Name       string
+	Title      string
+	Wins       int
+	Losses     int
+	Draws      int
+	PrettyName string
 }
 
 func NewCounterPageFromWinLossCounter(counter *WinLossCounter) *CounterPage {
 	return &CounterPage{
-		Title:  "",
-		Wins:   counter.Wins,
-		Losses: counter.Losses,
-		Draws:  counter.Draws,
+		Title:      "",
+		Wins:       counter.Wins,
+		Losses:     counter.Losses,
+		Draws:      counter.Draws,
+		PrettyName: counter.PrettyName,
+		Name:       counter.Name,
 	}
 }
 
@@ -113,20 +116,20 @@ func main() {
 		c.HTML(200, out.Bytes())
 	})
 
-    r.GET("/counters/{name}/solo", func(c *rux.Context) {
-        counter := handleCounter(c.Param("name"))
-        tmpl := template.Must(template.ParseFiles("templates/solo_counter.gohtml"))
-        data := NewCounterPageFromWinLossCounter(counter)
-        data.Name = counter.Name
-        data.Title = fmt.Sprintf("WLD Counter (Solo) - %s", counter.Name)
+	r.GET("/counters/{name}/solo", func(c *rux.Context) {
+		counter := handleCounter(c.Param("name"))
+		tmpl := template.Must(template.ParseFiles("templates/solo_counter.gohtml"))
+		data := NewCounterPageFromWinLossCounter(counter)
+		data.Name = counter.Name
+		data.Title = fmt.Sprintf("WLD Counter (Solo) - %s", counter.Name)
 
-        out := bytes.Buffer{}
-        err := tmpl.Execute(&out, data)
-        if err != nil {
-            fmt.Println("Something failed during execute", err)
-        }
-        c.HTML(200, out.Bytes())
-    })
+		out := bytes.Buffer{}
+		err := tmpl.Execute(&out, data)
+		if err != nil {
+			fmt.Println("Something failed during execute", err)
+		}
+		c.HTML(200, out.Bytes())
+	})
 
 	// Use the /api/v1 path as the root
 	r.Group("/api/v1", func() {
