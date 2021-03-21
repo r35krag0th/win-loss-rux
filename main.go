@@ -113,6 +113,21 @@ func main() {
 		c.HTML(200, out.Bytes())
 	})
 
+    r.GET("/counter/{name}/solo", func(c *rux.Context) {
+        counter := handleCounter(c.Param("name"))
+        tmpl := template.Must(template.ParseFiles("templates/solo_counter.gohtml"))
+        data := NewCounterPageFromWinLossCounter(counter)
+        data.Name = counter.Name
+        data.Title = fmt.Sprintf("WLD Counter (Solo) - %s", counter.Name)
+
+        out := bytes.Buffer{}
+        err := tmpl.Execute(&out, data)
+        if err != nil {
+            fmt.Println("Something failed during execute", err)
+        }
+        c.HTML(200, out.Bytes())
+    })
+
 	// Use the /api/v1 path as the root
 	r.Group("/api/v1", func() {
 
