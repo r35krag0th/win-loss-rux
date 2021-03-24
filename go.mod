@@ -14,5 +14,6 @@ require (
 	github.com/hashicorp/go-immutable-radix v1.3.0 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/mitchellh/mapstructure v1.4.0 // indirect
+	github.com/sirupsen/logrus v1.8.1
 	golang.org/x/sys v0.0.0-20210108172913-0df2131ae363 // indirect
 )

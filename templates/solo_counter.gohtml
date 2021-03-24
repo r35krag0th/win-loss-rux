@@ -1,16 +1,22 @@
-
 <html>
     <head>
         <title>{{ .Title }}</title>
         <link rel="preconnect" href="https://fonts.gstatic.com">
         <link href="https://fonts.googleapis.com/css2?family=Major+Mono+Display&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://github.hubspot.com/odometer/themes/odometer-theme-default.css" />
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.min.js" type="text/javascript"></script>
+        <script src="https://github.hubspot.com/odometer/odometer.js"></script>
         <script type="text/javascript">
+            window.odometerOptions = {
+                selector: '.odometer.wins',
+                theme: 'default',
+
+            }
             setInterval(function() {
                 $.ajax({
                     url: "/api/v1/counters/{{ .Name }}",
                     success: function(data) {
-                        $("span.wins").text(data.wins);
+                        $("div.wins").text(data.wins);
                     },
                     dataType: "json"
                 });
@@ -37,7 +43,7 @@
     </head>
     <body>
         <div class="counter">
-            <div class="counter_digit wins">{{ .Wins }}</div><div class="counter_name">{{ .PrettyName }}</div>
+            <div class="counter_digit odometer wins">{{ .Wins }}</div><div class="counter_name">{{ .PrettyName }}</div>
         </div>
     </body>
 </html>
