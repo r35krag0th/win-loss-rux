@@ -3,12 +3,25 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
+
 	"github.com/hashicorp/consul/api"
 	"github.com/sirupsen/logrus"
-	"strings"
 )
 
-const consulKeyPrefix = "win-loss-api/counters"
+var (
+	envName         = getenv("APP_ENV", "dev")
+	consulKeyPrefix = fmt.Sprintf("win-loss-api/%s/counters", envName)
+)
+
+func getenv(key, fallback string) string {
+	value := os.Getenv(key)
+	if len(value) == 0 {
+		return fallback
+	}
+	return value
+}
 
 type WinLossCounter struct {
 	consulClient *api.Client
@@ -301,4 +314,31 @@ func (w *WinLossCounter) Save() {
 	if err != nil {
 		logger.WithError(err).Error("Failed to write new state to Consul")
 	}
+}
+
+func (w WinLossCounter) valueToNumericsCounter(value int, postfix string, color string) *NumericsCounterWidgetResponse {
+
+	return &NumericsCounterWidgetResponse{
+		NumericsWidgetResponse: NumericsWidgetResponse{
+			Postfix: postfix,
+			Color:   color,
+		},
+		Data: struct {
+			Value int `json:"value"`
+		}{
+			Value: value,
+		},
+	}
+}
+
+func (w WinLossCounter) WinsToNumericsCounter(color string) *NumericsCounterWidgetResponse {
+	return w.valueToNumericsCounter(w.Wins, "Wins", color)
+}
+
+func (w WinLossCounter) LossesToNumericsCounter(color string) *NumericsCounterWidgetResponse {
+	return w.valueToNumericsCounter(w.Losses, "Losses", color)
+}
+
+func (w WinLossCounter) DrawsToNumericsCounter(color string) *NumericsCounterWidgetResponse {
+	return w.valueToNumericsCounter(w.Draws, "Draws", color)
 }

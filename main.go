@@ -103,6 +103,20 @@ func (i *IndexTemplateData) AddCounter(href, text string) {
 	})
 }
 
+type NumericsWidgetResponse struct {
+	Postfix string `json:"postfix"`
+	Color   string `json:"color"`
+}
+
+type NDataInt struct {
+	Value int `json:"value"`
+}
+
+type NumericsCounterWidgetResponse struct {
+	NumericsWidgetResponse
+	Data NDataInt `json:"data"`
+}
+
 func main() {
 	r := rux.New()
 
@@ -249,22 +263,31 @@ func main() {
 						"method": "POST",
 					}).Infof("Handling Reset Counter -> %s", c.Param("name"))
 					counter := handleCounter(c.Param("name"))
-					//counter.SetConsulClient(consulClient)
-
 					counter.Reset()
 					c.JSON(200, counter)
 				})
 
 				// Increment and Decrement Wins
 				r.Group("/win", func() {
+					r.GET("", func(c *rux.Context) {
+						counter := handleCounter(c.Param("name"))
+						color, ok := c.QueryParam("color")
+						if !ok {
+							color = "green"
+						}
+						_, ok = c.QueryParam("numerics")
+						if ok {
+							c.JSON(200, counter.WinsToNumericsCounter(color))
+							return
+						}
+						c.JSON(200, counter)
+					})
 					r.PUT("", func(c *rux.Context) {
 						logger.WithFields(logrus.Fields{
 							"name":   c.Param("name"),
 							"method": "PUT",
 						}).Infof("Handling Increment Wins -> %s", c.Param("name"))
 						counter := handleCounter(c.Param("name"))
-						//counter.SetConsulClient(consulClient)
-
 						counter.AddWin()
 						c.JSON(200, counter)
 					})
@@ -274,8 +297,6 @@ func main() {
 							"method": "DELETE",
 						}).Infof("Handling Decrement Wins -> %s", c.Param("name"))
 						counter := handleCounter(c.Param("name"))
-						//counter.SetConsulClient(consulClient)
-
 						counter.RemoveWin()
 						c.JSON(200, counter)
 					})
@@ -283,6 +304,19 @@ func main() {
 
 				// Increment and Decrement Losses
 				r.Group("/loss", func() {
+					r.GET("", func(c *rux.Context) {
+						counter := handleCounter(c.Param("name"))
+						color, ok := c.QueryParam("color")
+						if !ok {
+							color = "red"
+						}
+						_, ok = c.QueryParam("numerics")
+						if ok {
+							c.JSON(200, counter.LossesToNumericsCounter(color))
+							return
+						}
+						c.JSON(200, counter)
+					})
 					r.PUT("", func(c *rux.Context) {
 						logger.WithFields(logrus.Fields{
 							"name":   c.Param("name"),
@@ -309,6 +343,19 @@ func main() {
 
 				// Increment and Decrement Draws
 				r.Group("/draw", func() {
+					r.GET("", func(c *rux.Context) {
+						counter := handleCounter(c.Param("name"))
+						color, ok := c.QueryParam("color")
+						if !ok {
+							color = "gray"
+						}
+						_, ok = c.QueryParam("numerics")
+						if ok {
+							c.JSON(200, counter.DrawsToNumericsCounter(color))
+							return
+						}
+						c.JSON(200, counter)
+					})
 					r.PUT("", func(c *rux.Context) {
 						logger.WithFields(logrus.Fields{
 							"name":   c.Param("name"),
