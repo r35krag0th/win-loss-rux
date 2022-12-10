@@ -2,15 +2,21 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"html/template"
+	"net/http"
+	"os"
+	"time"
+
+	"github.com/getsentry/sentry-go"
+	sentryhttp "github.com/getsentry/sentry-go/http"
 	"github.com/gookit/rux"
 	"github.com/hashicorp/consul/api"
+	"github.com/r35krag0th/win-loss-rux/version"
 	"github.com/sirupsen/logrus"
-	"html/template"
-	"os"
 )
 
-//var consulClient *api.Client
 func init() {
 	logrus.SetFormatter(&logrus.TextFormatter{})
 	logrus.SetReportCaller(false)
@@ -18,13 +24,16 @@ func init() {
 	logrus.SetLevel(logrus.InfoLevel)
 }
 
-func handleCounter(name string) *WinLossCounter {
+func handleCounter(ctx context.Context, name string) *WinLossCounter {
 	logger := logrus.WithFields(logrus.Fields{
 		"counter_name": name,
+		"version":      version.Version,
 	})
 
+	span := sentry.StartSpan(ctx, "Initialize WinLossCounter")
 	logger.Debug("Creating new WinLossCounter")
 	tmp := NewWinLossCounter(name)
+	span.Finish()
 
 	consulScheme := os.Getenv("CONSUL_SCHEME")
 	logger.Debugf("Fetched CONSUL_SCHEME environment variable: %s", consulScheme)
@@ -42,14 +51,20 @@ func handleCounter(name string) *WinLossCounter {
 		}
 	}
 
+	span = sentry.StartSpan(ctx, "Initialize Consul Client")
 	logger.Debug("Creating Consul client")
 	consulClient, err := api.NewClient(targetConfig)
 	if err != nil {
 		logger.Error("Failed to create Consul client", err)
+		sentry.CaptureException(err)
 	}
+	span.Finish()
 
 	logger.Debug("Setting Consul Client in WinLossCounter")
 	tmp.SetConsulClient(consulClient)
+
+	span = sentry.StartSpan(ctx, "Load data from Consul")
+	defer span.Finish()
 
 	logger.Debug("Loading counter's data")
 	tmp.Load()
@@ -58,76 +73,51 @@ func handleCounter(name string) *WinLossCounter {
 	return tmp
 }
 
-type CounterPage struct {
-	Name       string
-	Title      string
-	Wins       int
-	Losses     int
-	Draws      int
-	PrettyName string
-}
-
-func NewCounterPageFromWinLossCounter(counter *WinLossCounter) *CounterPage {
-	logger := logrus.WithFields(logrus.Fields{
-		"wins":        counter.Wins,
-		"losses":      counter.Losses,
-		"draws":       counter.Draws,
-		"pretty_name": counter.PrettyName,
-		"name":        counter.Name,
-	})
-	logger.Debug("Creating CounterPage")
-	return &CounterPage{
-		Title:      "",
-		Wins:       counter.Wins,
-		Losses:     counter.Losses,
-		Draws:      counter.Draws,
-		PrettyName: counter.PrettyName,
-		Name:       counter.Name,
-	}
-}
-
-type ClickableLinkData struct {
-	Href string
-	Text string
-}
-
-type IndexTemplateData struct {
-	Title    string
-	Counters []ClickableLinkData
-}
-
-func (i *IndexTemplateData) AddCounter(href, text string) {
-	i.Counters = append(i.Counters, ClickableLinkData{
-		Href: href,
-		Text: text,
-	})
-}
-
-type NumericsWidgetResponse struct {
-	Postfix string `json:"postfix"`
-	Color   string `json:"color"`
-}
-
-type NDataInt struct {
-	Value int `json:"value"`
-}
-
-type NumericsCounterWidgetResponse struct {
-	NumericsWidgetResponse
-	Data NDataInt `json:"data"`
-}
-
 func main() {
+	rootLogger := logrus.WithFields(logrus.Fields{
+		"version":  version.Version,
+		"env_name": envName,
+	})
+
+	err := sentry.Init(sentry.ClientOptions{
+		Dsn:              os.Getenv("SENTRY_DSN"),
+		EnableTracing:    true,
+		TracesSampleRate: 0.01,
+		Environment:      getenv("APP_ENV", "local"),
+		Release:          version.Version,
+	})
+	if err != nil {
+		rootLogger.Fatalf("sentry.Init: %s", err)
+	}
+	// Flush buffered events before the program terminates.
+	defer sentry.Flush(2 * time.Second)
+
+	sentryHandler := sentryhttp.New(sentryhttp.Options{})
+
 	r := rux.New()
+	// r.Use(func(c *rux.Context) {
+	// 	sentryHandler.Handle(c.Handler())
+	// 	c.Next()
+	// })
+
+	r.Use(rux.WrapHTTPHandlerFunc(sentryHandler.HandleFunc(func(rw http.ResponseWriter, r *http.Request) {
+		hub := sentry.GetHubFromContext(r.Context())
+		hub.Scope().SetTag("someRandomTag", "maybeYouNeedIt")
+		hub.Scope().SetRequest(r)
+	})))
 
 	r.GET("", func(c *rux.Context) {
-		logger := logrus.WithFields(logrus.Fields{
+		logger := rootLogger.WithFields(logrus.Fields{
 			"path": "/",
 		})
 
+		if hub := sentry.GetHubFromContext(c.Req.Context()); hub != nil {
+			hub.Scope().SetTransaction("Frontend - Index")
+		}
+
 		logger.Debug("Creating blank Counter as helper")
-		counter := handleCounter("")
-		//counter.SetConsulClient(consulClient)
+		counter := handleCounter(c.Req.Context(), "")
+		// counter.SetConsulClient(consulClient)
 
 		logger.Debug("Listing all counters")
 		counterNames := counter.ListAll()
@@ -162,13 +152,18 @@ func main() {
 	})
 
 	r.GET("/counters/{name}", func(c *rux.Context) {
-		logger := logrus.WithFields(logrus.Fields{
+		if hub := sentry.GetHubFromContext(c.Req.Context()); hub != nil {
+			hub.Scope().SetTransaction("Frontend - Show Counter")
+			hub.Scope().SetExtra("counter_name", c.Param("name"))
+		}
+
+		logger := rootLogger.WithFields(logrus.Fields{
 			"path": "/counters/{name}",
 			"name": c.Param("name"),
 		})
 		logger.Info("Creating counter")
-		counter := handleCounter(c.Param("name"))
-		//counter.SetConsulClient(consulClient)
+		counter := handleCounter(c.Req.Context(), c.Param("name"))
+		// counter.SetConsulClient(consulClient)
 
 		tmpl := template.Must(template.ParseFiles("templates/counter.gohtml"))
 		data := NewCounterPageFromWinLossCounter(counter)
@@ -184,11 +179,15 @@ func main() {
 	})
 
 	r.GET("/counters/{name}/solo", func(c *rux.Context) {
-		logger := logrus.WithFields(logrus.Fields{
+		if hub := sentry.GetHubFromContext(c.Req.Context()); hub != nil {
+			hub.Scope().SetTransaction("Show Counter (Solo Mode)")
+			hub.Scope().SetExtra("counter_name", c.Param("name"))
+		}
+		logger := rootLogger.WithFields(logrus.Fields{
 			"path": "/counters/{name}/solo",
 			"name": c.Param("name"),
 		})
-		counter := handleCounter(c.Param("name"))
+		counter := handleCounter(c.Req.Context(), c.Param("name"))
 		tmpl := template.Must(template.ParseFiles("templates/solo_counter.gohtml"))
 		data := NewCounterPageFromWinLossCounter(counter)
 		data.Name = counter.Name
@@ -204,7 +203,7 @@ func main() {
 
 	// Use the /api/v1 path as the root
 	r.Group("/api/v1", func() {
-		apiLogger := logrus.WithFields(logrus.Fields{
+		apiLogger := rootLogger.WithFields(logrus.Fields{
 			"path": "/api/v1",
 		})
 
@@ -215,11 +214,15 @@ func main() {
 			})
 			// List all Counters
 			r.GET("", func(c *rux.Context) {
+				if hub := sentry.GetHubFromContext(c.Req.Context()); hub != nil {
+					hub.Scope().SetTransaction("API - List Counters")
+				}
+
 				counterLogger.WithFields(logrus.Fields{
 					"method": "GET",
 				}).Info("Handling Index request")
-				counter := handleCounter("")
-				//counter.SetConsulClient(consulClient)
+				counter := handleCounter(c.Req.Context(), "")
+				// counter.SetConsulClient(consulClient)
 
 				counterNames := counter.ListAll()
 				c.JSON(200, counterNames)
@@ -233,24 +236,34 @@ func main() {
 				})
 
 				r.GET("", func(c *rux.Context) {
+					if hub := sentry.GetHubFromContext(c.Req.Context()); hub != nil {
+						hub.Scope().SetTransaction("API - Show Counter")
+						hub.Scope().SetExtra("counter_name", c.Param("name"))
+					}
+
 					logger.WithFields(logrus.Fields{
 						"name":   c.Param("name"),
 						"method": "GET",
 					}).Infof("Handling Show Counter -> %s", c.Param("name"))
-					counter := handleCounter(c.Param("name"))
-					//counter.SetConsulClient(consulClient)
+					counter := handleCounter(c.Req.Context(), c.Param("name"))
+					// counter.SetConsulClient(consulClient)
 
 					c.JSON(200, counter)
 				})
 
 				// Allow deleting the counter
 				r.DELETE("", func(c *rux.Context) {
+					if hub := sentry.GetHubFromContext(c.Req.Context()); hub != nil {
+						hub.Scope().SetTransaction("API - Delete Counter")
+						hub.Scope().SetExtra("counter_name", c.Param("name"))
+					}
+
 					logger.WithFields(logrus.Fields{
 						"name":   c.Param("name"),
 						"method": "DELETE",
 					}).Infof("Handling Delete Counter -> %s", c.Param("name"))
-					counter := handleCounter(c.Param("name"))
-					//counter.SetConsulClient(consulClient)
+					counter := handleCounter(c.Req.Context(), c.Param("name"))
+					// counter.SetConsulClient(consulClient)
 
 					counter.Destroy()
 					c.JSON(200, counter)
@@ -258,11 +271,16 @@ func main() {
 
 				// Allow resetting the counter to ZERO
 				r.POST("/reset", func(c *rux.Context) {
+					if hub := sentry.GetHubFromContext(c.Req.Context()); hub != nil {
+						hub.Scope().SetTransaction("API - Reset Counter")
+						hub.Scope().SetExtra("counter_name", c.Param("name"))
+					}
+
 					logger.WithFields(logrus.Fields{
 						"name":   c.Param("name"),
 						"method": "POST",
 					}).Infof("Handling Reset Counter -> %s", c.Param("name"))
-					counter := handleCounter(c.Param("name"))
+					counter := handleCounter(c.Req.Context(), c.Param("name"))
 					counter.Reset()
 					c.JSON(200, counter)
 				})
@@ -270,7 +288,12 @@ func main() {
 				// Increment and Decrement Wins
 				r.Group("/win", func() {
 					r.GET("", func(c *rux.Context) {
-						counter := handleCounter(c.Param("name"))
+						if hub := sentry.GetHubFromContext(c.Req.Context()); hub != nil {
+							hub.Scope().SetTransaction("API - Show Counter Wins")
+							hub.Scope().SetExtra("counter_name", c.Param("name"))
+						}
+
+						counter := handleCounter(c.Req.Context(), c.Param("name"))
 						color, ok := c.QueryParam("color")
 						if !ok {
 							color = "green"
@@ -283,20 +306,28 @@ func main() {
 						c.JSON(200, counter)
 					})
 					r.PUT("", func(c *rux.Context) {
+						if hub := sentry.GetHubFromContext(c.Req.Context()); hub != nil {
+							hub.Scope().SetTransaction("API - Increment Counter Wins")
+							hub.Scope().SetExtra("counter_name", c.Param("name"))
+						}
 						logger.WithFields(logrus.Fields{
 							"name":   c.Param("name"),
 							"method": "PUT",
 						}).Infof("Handling Increment Wins -> %s", c.Param("name"))
-						counter := handleCounter(c.Param("name"))
+						counter := handleCounter(c.Req.Context(), c.Param("name"))
 						counter.AddWin()
 						c.JSON(200, counter)
 					})
 					r.DELETE("", func(c *rux.Context) {
+						if hub := sentry.GetHubFromContext(c.Req.Context()); hub != nil {
+							hub.Scope().SetTransaction("API - Decrement Counter Wins")
+							hub.Scope().SetExtra("counter_name", c.Param("name"))
+						}
 						logger.WithFields(logrus.Fields{
 							"name":   c.Param("name"),
 							"method": "DELETE",
 						}).Infof("Handling Decrement Wins -> %s", c.Param("name"))
-						counter := handleCounter(c.Param("name"))
+						counter := handleCounter(c.Req.Context(), c.Param("name"))
 						counter.RemoveWin()
 						c.JSON(200, counter)
 					})
@@ -305,7 +336,12 @@ func main() {
 				// Increment and Decrement Losses
 				r.Group("/loss", func() {
 					r.GET("", func(c *rux.Context) {
-						counter := handleCounter(c.Param("name"))
+						if hub := sentry.GetHubFromContext(c.Req.Context()); hub != nil {
+							hub.Scope().SetTransaction("API - Show Counter Losses")
+							hub.Scope().SetExtra("counter_name", c.Param("name"))
+						}
+
+						counter := handleCounter(c.Req.Context(), c.Param("name"))
 						color, ok := c.QueryParam("color")
 						if !ok {
 							color = "red"
@@ -318,23 +354,33 @@ func main() {
 						c.JSON(200, counter)
 					})
 					r.PUT("", func(c *rux.Context) {
+						if hub := sentry.GetHubFromContext(c.Req.Context()); hub != nil {
+							hub.Scope().SetTransaction("API - Increment Counter Losses")
+							hub.Scope().SetExtra("counter_name", c.Param("name"))
+						}
+
 						logger.WithFields(logrus.Fields{
 							"name":   c.Param("name"),
 							"method": "PUT",
 						}).Infof("Handling Increment Losses -> %s", c.Param("name"))
-						counter := handleCounter(c.Param("name"))
-						//counter.SetConsulClient(consulClient)
+						counter := handleCounter(c.Req.Context(), c.Param("name"))
+						// counter.SetConsulClient(consulClient)
 
 						counter.AddLoss()
 						c.JSON(200, counter)
 					})
 					r.DELETE("", func(c *rux.Context) {
+						if hub := sentry.GetHubFromContext(c.Req.Context()); hub != nil {
+							hub.Scope().SetTransaction("API - Decrement Counter Losses")
+							hub.Scope().SetExtra("counter_name", c.Param("name"))
+						}
+
 						logger.WithFields(logrus.Fields{
 							"name":   c.Param("name"),
 							"method": "DELETE",
 						}).Infof("Handling Decrement Losses -> %s", c.Param("name"))
-						counter := handleCounter(c.Param("name"))
-						//counter.SetConsulClient(consulClient)
+						counter := handleCounter(c.Req.Context(), c.Param("name"))
+						// counter.SetConsulClient(consulClient)
 
 						counter.RemoveLoss()
 						c.JSON(200, counter)
@@ -344,7 +390,12 @@ func main() {
 				// Increment and Decrement Draws
 				r.Group("/draw", func() {
 					r.GET("", func(c *rux.Context) {
-						counter := handleCounter(c.Param("name"))
+						if hub := sentry.GetHubFromContext(c.Req.Context()); hub != nil {
+							hub.Scope().SetTransaction("API - Show Counter Draws")
+							hub.Scope().SetExtra("counter_name", c.Param("name"))
+						}
+
+						counter := handleCounter(c.Req.Context(), c.Param("name"))
 						color, ok := c.QueryParam("color")
 						if !ok {
 							color = "gray"
@@ -357,23 +408,33 @@ func main() {
 						c.JSON(200, counter)
 					})
 					r.PUT("", func(c *rux.Context) {
+						if hub := sentry.GetHubFromContext(c.Req.Context()); hub != nil {
+							hub.Scope().SetTransaction("API - Increment Counter Draws")
+							hub.Scope().SetExtra("counter_name", c.Param("name"))
+						}
+
 						logger.WithFields(logrus.Fields{
 							"name":   c.Param("name"),
 							"method": "PUT",
 						}).Infof("Handling Increment Draws -> %s", c.Param("name"))
-						counter := handleCounter(c.Param("name"))
-						//counter.SetConsulClient(consulClient)
+						counter := handleCounter(c.Req.Context(), c.Param("name"))
+						// counter.SetConsulClient(consulClient)
 
 						counter.AddDraw()
 						c.JSON(200, counter)
 					})
 					r.DELETE("", func(c *rux.Context) {
+						if hub := sentry.GetHubFromContext(c.Req.Context()); hub != nil {
+							hub.Scope().SetTransaction("API - Decrement Counter Draws")
+							hub.Scope().SetExtra("counter_name", c.Param("name"))
+						}
+
 						logger.WithFields(logrus.Fields{
 							"name":   c.Param("name"),
 							"method": "DELETE",
 						}).Infof("Handling Decrement Draws -> %s", c.Param("name"))
-						counter := handleCounter(c.Param("name"))
-						//counter.SetConsulClient(consulClient)
+						counter := handleCounter(c.Req.Context(), c.Param("name"))
+						// counter.SetConsulClient(consulClient)
 
 						counter.RemoveDraw()
 						c.JSON(200, counter)
