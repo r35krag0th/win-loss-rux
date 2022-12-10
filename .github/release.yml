@@ -24,7 +24,7 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Extract metadata (tags/labels) for docker
         id: meta
         uses: docker/metadata-action@v4
@@ -45,7 +45,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            ldflags="-X=github.com/r35krag0th/win-loss-rux/v1/version.Version=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}"
+            ldflags="-X=github.com/r35krag0th/win-loss-rux/version.Version=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}"
       - name: Create Sentry release
         uses: getsentry/action-release@v1
         env:
