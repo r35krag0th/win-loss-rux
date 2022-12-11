@@ -79,16 +79,24 @@ func (w WinLossCounter) ListAll() []string {
 	var returnedKeys []string
 	for _, k := range matchedKeys {
 		// fmt.Printf("[ListAll] k=%s\n", k)
-		splitBySlash := strings.SplitN(k.Key, "/", 3)
+		logrus.WithFields(logrus.Fields{
+			"matched_key": k.Key,
+		}).Debug("Iterating over matched key")
 
-		if len(splitBySlash) < 3 || splitBySlash[2] == "" {
-			logger.Warn("--- Too few segments or last segment was empy.  SKIP.")
+		splitBySlash := strings.SplitN(k.Key, "/", 4)
+
+		logrus.WithFields(logrus.Fields{
+			"split":     splitBySlash,
+			"split_len": len(splitBySlash),
+		}).Debug("Working with split")
+		if len(splitBySlash) < 3 || splitBySlash[3] == "" {
+			logger.Warn("--- Too few segments or last segment was empty.  SKIP.")
 			continue
 		}
 
 		returnedKeys = append(
 			returnedKeys,
-			strings.SplitN(k.Key, "/", 3)[2],
+			splitBySlash[3],
 		)
 	}
 	return returnedKeys

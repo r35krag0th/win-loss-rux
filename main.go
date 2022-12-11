@@ -135,7 +135,12 @@ func main() {
 		logger.WithFields(logrus.Fields{
 			"template": "template/index.gohtml",
 		}).Debug("Initializing template for index page")
-		tmpl := template.Must(template.ParseFiles("templates/index.gohtml"))
+		// tmpl := template.Must(template.ParseFiles("templates/index.gohtml"))
+		tmpl, err := template.New("index").Parse(embedIndexTemplate)
+		if err != nil {
+			logger.WithError(err).Error("Failed to load template from embed")
+			c.AbortWithStatus(500, "Something bad happened")
+		}
 
 		logger.Debug("Rendering template")
 		data := IndexTemplateData{Title: "WLD - List of Counters"}
@@ -150,10 +155,10 @@ func main() {
 		}
 		out := bytes.Buffer{}
 		logger.Info("Rendering template with data")
-		err := tmpl.Execute(&out, data)
+		err = tmpl.Execute(&out, data)
 		if err != nil {
-			logger.Error("Something failed during execute", err)
-			c.HTML(500, out.Bytes())
+			logger.WithError(err).Error("Something failed during execute")
+			c.AbortWithStatus(500, "Something bad happened")
 			return
 		}
 
@@ -175,15 +180,24 @@ func main() {
 		counter := handleCounter(c.Req.Context(), c.Param("name"))
 		// counter.SetConsulClient(consulClient)
 
-		tmpl := template.Must(template.ParseFiles("templates/counter.gohtml"))
+		// tmpl := template.Must(template.ParseFiles("templates/counter.gohtml"))
+		tmpl, err := template.New("counter").Parse(embedCounterTemplate)
+		if err != nil {
+			logger.WithError(err).Error("Failed to load template from embed")
+			c.AbortWithStatus(500, "Something bad happened")
+			return
+		}
+
 		data := NewCounterPageFromWinLossCounter(counter)
 		data.Name = counter.Name
 		data.Title = fmt.Sprintf("WLD Counter - %s", counter.Name)
 
 		out := bytes.Buffer{}
-		err := tmpl.Execute(&out, data)
+		err = tmpl.Execute(&out, data)
 		if err != nil {
-			fmt.Println("Something failed during execute", err)
+			logrus.WithError(err).Error("failed to render the template")
+			c.AbortWithStatus(500, "Something bad happened")
+			return
 		}
 		c.HTML(200, out.Bytes())
 	})
@@ -198,15 +212,24 @@ func main() {
 			"name": c.Param("name"),
 		})
 		counter := handleCounter(c.Req.Context(), c.Param("name"))
-		tmpl := template.Must(template.ParseFiles("templates/solo_counter.gohtml"))
+		// tmpl := template.Must(template.ParseFiles("templates/solo_counter.gohtml"))
+		tmpl, err := template.New("soloCounter").Parse(embedSoloCounterTemplate)
+		if err != nil {
+			logger.WithError(err).Error("Failed to load template from embed")
+			c.AbortWithStatus(500, "Something bad happened")
+			return
+		}
+
 		data := NewCounterPageFromWinLossCounter(counter)
 		data.Name = counter.Name
 		data.Title = fmt.Sprintf("WLD Counter (Solo) - %s", counter.Name)
 
 		out := bytes.Buffer{}
-		err := tmpl.Execute(&out, data)
+		err = tmpl.Execute(&out, data)
 		if err != nil {
-			logger.Error("Something failed during execute", err)
+			logger.WithError(err).Error("Something failed during execute")
+			c.AbortWithStatus(500, "Something bad happened")
+			return
 		}
 		c.HTML(200, out.Bytes())
 	})
