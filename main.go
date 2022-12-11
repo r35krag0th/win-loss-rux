@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -16,6 +17,15 @@ import (
 	"github.com/r35krag0th/win-loss-rux/version"
 	"github.com/sirupsen/logrus"
 )
+
+//go:embed templates/counter.gohtml
+var embedCounterTemplate string
+
+//go:embed templates/index.gohtml
+var embedIndexTemplate string
+
+//go:embed templates/solo_counter.gohtml
+var embedSoloCounterTemplate string
 
 func init() {
 	logrus.SetFormatter(&logrus.TextFormatter{})
