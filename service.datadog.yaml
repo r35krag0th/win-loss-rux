@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/DataDog/schema/main/service-catalog/v2.1/schema.json
+# Details: https://docs.datadoghq.com/tracing/service_catalog/service_metadata_structure
+schema-version: v2.1
+dd-service: win-loss
+application: Win Loss
+lifecycle: production
+links:
+  - name: GitHub
+    type: repo
+    url: https://github.com/r35krag0th/win-loss-rux
+integrations:
+  pagerduty:
+    service-url: https://r35networks.pagerduty.com/service-directory/PY8JSQR
+
